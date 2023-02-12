@@ -1,5 +1,5 @@
 {
-  "name": "dk-cli",
+  "name": "pbdk-cli",
   "version": "0.0.1",
   "description": "Project base CLI",
   "main": "index.js",

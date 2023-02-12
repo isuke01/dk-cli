@@ -1,22 +1,7 @@
 #!/usr/bin/env node
 
-/**
-* TODO: [FEATURE] Optionally to run npm install
-* TODO: [SETUP CLI ENV] make sure this is set separatly
-* TODO: [setupEnvFile] Check if example file exists at all, fail if not with message
-* TODO: Read default env varibles from current env if exists.
-IDEA: Make menu based CLI, with each option separatly and with option to steb by step setup where useg going to be promted step by stem install.
-* TODO: Make sure with WP CLI fix only once the require is added!
-* TODO: Error handlers for each case.
-* TODO: Check console if it supports all commands that we going to run, if not prompt user with some usefull info.
-* TODO: During the set ENV things check if varrible does exists.
-* TODO: Structurize CLI files.
-* TODO: Check if it is even project that can be run via the install stuff.
-
-* TODO: Display warning that project base is required to proper setup.
-*/
-
 import fs from 'fs'
+import path from 'path'
 import chalk from 'chalk'
 import chalkAnimation from 'chalk-animation'
 // @docs https://www.npmjs.com/package/inquirer
@@ -27,45 +12,72 @@ import { exec, spawn } from 'child_process'
 import getSitesInfo from './getLocalSiteSetting.js'
 import generateSaltsObj from './generateWpSalts.js'
 
+import yargs from 'yargs/yargs'
+// import { retro } from 'gradient-string'
+// Maybe use it more at some point https://github.com/yargs/yargs/blob/main/docs/examples.md#yargs-is-here-to-help-you
+const options = yargs(process.argv.slice(2))
+.usage('Usage: $0 <command> [options]')
+.usage('Options are optiona.')
+.help('v')
+.alias('v', 'version')
+.help('h')
+.alias('h', 'help')
+.argv;
+
 // Vars
+const __dirname = path.dirname(import.meta.url).replace(/^file:\/\/\//, '')
 let siteSettings = {}
 
-const messageTiming = (time = 500) => new Promise((r) => setTimeout(r, time))
+// const messageTiming = (time = 500) => new Promise((r) => setTimeout(r, time))
+// async function welcomeMsg() {
+//   const rainbowTitle = chalkAnimation.rainbow(`Welcome to project-install CLI`)
 
-async function welcomeMsg() {
-  const rainbowTitle = chalkAnimation.rainbow(`Welcome to project-install CLI`)
+//   await messageTiming()
+//   rainbowTitle.stop()
+// }
 
-  await messageTiming()
-  rainbowTitle.stop()
-}
 
-async function askForFixLocalCli() {
-  const answers = await inquirer.prompt({
-    name: 'fix_local_cli',
-    type: 'list',
-    message: 'Should we auto-fix local cli?\n',
-    choices: [
-      'Yes',
-      'Nahh'
-    ]
-  })
+// async function askForFixLocalCli() {
+//   const answers = await inquirer.prompt({
+//     name: 'fix_local_cli',
+//     type: 'list',
+//     message: 'Should we auto-fix local cli?\n',
+//     choices: [
+//       'Yes',
+//       'Nahh'
+//     ]
+//   })
 
-  return fixWpCli(answers.fix_local_cli === 'Yes');
-}
+//   return fixWpCli(answers.fix_local_cli === 'Yes');
+// }
 
 const envExampleFile = '.env.example';
 const envFile = '.env';
+let envExists = false;
 
 async function copyEnvExample() {
-	if (!fs.existsSync(envFile)) {
-	  fs.copyFileSync(envExampleFile, envFile);
-	  console.log(`${chalk.bgYellow('.env.example copied to .env')}`);
+	envExists = fs.existsSync(envFile)
+
+	if (!envExists && !fs.existsSync(envExampleFile)){
+		console.log(`${chalk.bgYellow('Env files does not exists in the project')}`);
+		return;
+	}
+	
+	if (!envExists) {
+		fs.copyFileSync(envExampleFile, envFile);
+		console.log(`${chalk.bgYellow('.env.example copied to .env')}`);
+	} else if (envExists) {
+		console.log(`${chalk.bgGreen('.env file already exists.')}`);
 	} else {
-	  console.log(`${chalk.bgGreen('.env file already exists.')}`);
+		console.log(`${chalk.bgRed('No .env file, script will fail!')}`);
 	}
 }
 
 async function updateEnvVariable(variable, value) {
+	if (!envExists) {
+		console.log(`${chalk.bgRed('.env file is missing in the project!')}`);
+		return;
+	}
 	let fileContent = fs.readFileSync(envFile, 'utf-8');
 	
 	// Remove the comment symbol from the variable if it exists
@@ -119,28 +131,54 @@ async function fixWpCli(isCorrect) {
 		return;
 	}
 
-    const wpCliConfigFile = 'wp-cli.yml'
-    const configString = `"
-require:
-  - wp-cli.local.php"`
-    exec(`printf ${configString} >> ${wpCliConfigFile}`, (error, stdout, stderr) => {
-      if (error) {
-        console.log(`error: ${error}`);
-        return;
-      }
-      if (stderr) {
-        console.log(`stderr: ${stderr}`);
-        return;
-      }
+	const maybeCreateFile = async (fileName) => {
+		const pathToFile = `/${__dirname}/helpers/${fileName}`
+		const {existsSync, readFileSync, writeFileSync} = fs
 
-      if (stdout) {
-        console.log(`stdout: ${stdout}`);
-      }
-    });
-    console.log(`
+		try {
+		  if (!existsSync(fileName)) {
+			console.log(`File ${chalk.bgYellow(fileName)} does not exist, creating one ...`);
+			const data = await readFileSync(pathToFile.replace(/%20/g, ' '), 'utf8');
+			await writeFileSync(fileName, data);
+			return true;
+		  }
+		} catch (err) {
+		  console.error(`Error with creating file ${fileName}`, err);
+		}
+	}
+
+	const addConfigToFile = async (fileName, content) => {
+		if (!configString ){
+			console.log('You must provide content.')
+			return;
+		}
+
+		try {
+			const data = await fs.readFileSync(fileName, 'utf8');
+			if (data.includes(content)) {
+				console.log(`Content already exists in ${fileName}`);
+				return;
+			}
+		
+			await fs.appendFileSync(fileName, content);
+			console.log(`Content added to ${fileName}`);
+		} catch (err) {
+			console.error(`Error with reading/writing to ${fileName}`, err);
+		}
+	}
+	
+	const wpCliConfigFile = 'wp-cli.yml'
+
+	await maybeCreateFile('wp-cli.local.php')
+	await maybeCreateFile(wpCliConfigFile)
+	
+	const configString = `\nrequire:\n  - wp-cli.local.php`;
+	await addConfigToFile(wpCliConfigFile, configString)
+	
+	console.log(`
 ${chalk.bgGreen('Config to CLI added.')}\n
 ${chalk.bgGrey('NOTE:')} If your WP path is different than ${chalk.bgRed('public/wp')} you have to fix it manually in the ${chalk.bgGrey('wp-cli.yml')} file.
-    `)
+	`)
 
 	// TODO: SET Env if it is nto set yet. Maybe ask user if do this part?
 	await copyEnvExample();
@@ -163,11 +201,11 @@ async function runComposerInstall(shouldRun) {
   
 	composer.stdout.on('data', (data) => {
 		console.log(`${data}`);
-	  });
+	});
   
-	  composer.stderr.on('data', (data) => {
+	composer.stderr.on('data', (data) => {
 		console.error(`${data}`);
-	  });
+	});
   
 	  composer.on('close', (code) => {
 		if (code === 0) {
@@ -377,7 +415,7 @@ const menu = async () => {
 				break;
 
 			case "Fix WP CLI":
-				console.log(chalk.yellow("You selected Fix WP CLI"));
+				console.log(`\n${chalk.yellow("You selected Fix WP CLI")}`);
 				await fixWpCli(true)
 				menu();
 				break;

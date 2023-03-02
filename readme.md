@@ -30,3 +30,6 @@ $ pbdk-cli -v # To show version
 ## Development: 
 
 Clone repo, look into `packade.json`
+
+#### NPMJS publish
+Remember to update version.

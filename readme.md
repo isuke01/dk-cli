@@ -6,8 +6,8 @@ This project is ment to use in project directory, if not used, will fail terribl
 ***NOTE: Script may require sudo, e.g to read local files or make new files.***   
 ***NOTE: Don't run the script with sudo unless you sure.***
 
-Install/Update: 
-
+### Install/Update: 
+Installation `inquirer-press-to-continue` may require force.
 ```bash
 $ npm install -g pbdk-cli
 ```
@@ -26,3 +26,7 @@ $ pbdk-cli # To run CLI menu
 $ pbdk-cli -h # To help
 $ pbdk-cli -v # To show version
 ```
+
+## Development: 
+
+Clone repo, look into `packade.json`

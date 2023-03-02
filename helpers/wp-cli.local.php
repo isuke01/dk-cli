@@ -1,4 +1,3 @@
-
 <?php
 /**
  * The Local WP CLI configuration.

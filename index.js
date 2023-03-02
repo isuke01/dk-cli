@@ -2,12 +2,15 @@
 
 import fs from 'fs'
 import path from 'path'
-import chalk from 'chalk'
+import chalk, { colorNames } from 'chalk'
 import chalkAnimation from 'chalk-animation'
 // @docs https://www.npmjs.com/package/inquirer
 import inquirer from 'inquirer'
 import { exec, spawn } from 'child_process'
+import PressToContinuePrompt from 'inquirer-press-to-continue';
+import columnify from 'columnify';
 
+inquirer.registerPrompt('press-to-continue', PressToContinuePrompt);
 // Internal
 import getSitesInfo from './getLocalSiteSetting.js'
 import generateSaltsObj from './generateWpSalts.js'
@@ -28,6 +31,16 @@ const options = yargs(process.argv.slice(2))
 const __dirname = path.dirname(import.meta.url).replace(/^file:\/\/\//, '')
 let siteSettings = {}
 
+// https://stackoverflow.com/questions/73341773/check-if-child-process-can-run-a-command-in-nodejs
+async function isExecutable(command) {
+	const cases = []
+	for (const p of paths) {
+		const bin = path.join(p, command)
+		cases.push(fs.access(bin, fsconsts.X_OK)) // X_OK is bit flag which makes sure file is executable
+	}
+	await Promise.any(cases)
+	return command
+}
 // const messageTiming = (time = 500) => new Promise((r) => setTimeout(r, time))
 // async function welcomeMsg() {
 //   const rainbowTitle = chalkAnimation.rainbow(`Welcome to project-install CLI`)
@@ -102,10 +115,10 @@ async function updateEnvVariable(variable, value) {
 	}
 
 	const answers = await inquirer.prompt({
-	  name: variable,
-	  default: def,
-	  type: 'input',
-	  message: `Enter ${variable}:`,
+		name: variable,
+		default: def,
+		type: 'input',
+		message: `Enter ${variable}:`,
 	});
 
 	await updateEnvVariable(variable, answers[variable]);
@@ -113,15 +126,14 @@ async function updateEnvVariable(variable, value) {
 
 const setUpEnvDB = async () => {
 	await copyEnvExample();
+	await askAndUpdateEnvVariable('DB_PREFIX', '_wp');
 	await askAndUpdateEnvVariable('DB_NAME', 'local');
-	await askAndUpdateEnvVariable('DB_PASSWORD', 'wp_');
-	await askAndUpdateEnvVariable('DB_PREFIX', 'root');
+	await askAndUpdateEnvVariable('DB_USER', 'root');
 	await askAndUpdateEnvVariable('DB_PASSWORD', 'root');
 
 	// TODO: Ask user about this part
-
 	if (siteSettings?.domain) {
-		await askAndUpdateEnvVariable('WP_HOME', siteSettings.domain);
+		await askAndUpdateEnvVariable('WP_HOME', 'http://' + siteSettings.domain);
 	}
 }
 
@@ -193,32 +205,32 @@ ${chalk.bgGrey('NOTE:')} If your WP path is different than ${chalk.bgRed('public
 
 async function runComposerInstall(shouldRun) {
 	if (!shouldRun) {
-	  return;
+		return;
 	}
 	
 	return new Promise((resolve, reject) => {
-		const composer = spawn('composer', ['install', '--working-dir=./public/']);
-  
+		const composer = spawn('composer', ['install']);
+
 	composer.stdout.on('data', (data) => {
 		console.log(`${data}`);
 	});
-  
+
 	composer.stderr.on('data', (data) => {
 		console.error(`${data}`);
 	});
-  
-	  composer.on('close', (code) => {
+
+	composer.on('close', (code) => {
 		if (code === 0) {
-		  resolve(code);
+			resolve(code);
 		} else {
 			resolve(code);
 
-		   // reject(new Error(`composer process exited with code ${code}`));
+			// reject(new Error(`composer process exited with code ${code}`));
 		}
-	  });
+		});
 	});
-  }
-  
+}
+
 // async function askForComposerInstall() {
 // 	const answers = await inquirer.prompt({
 // 		name: 'run_composer_install',
@@ -240,26 +252,26 @@ async function runNvmUseAndNpmInstall(shouldRun) {
 	}
 
 	return new Promise((resolve, reject) => {
-	  const npmInstall = spawn('npm', ['install']);
-  
-	  npmInstall.stdout.on('data', (data) => {
-		console.log(`stdout: ${data}`);
-	  });
-  
-	  npmInstall.stderr.on('data', (data) => {
-		console.error(`stderr: ${data}`);
-	  });
-  
-	  npmInstall.on('close', (code) => {
-		if (code === 0) {
-		  resolve(code);
-		} else {
-		  resolve(code);
-		  // reject(new Error(`npm process exited with code ${code}`));
-		}
-	  });
+		const npmInstall = spawn('npm', ['install']);
+
+		npmInstall.stdout.on('data', (data) => {
+			console.log(`stdout: ${data}`);
+		});
+
+		npmInstall.stderr.on('data', (data) => {
+			console.error(`stderr: ${data}`);
+		});
+
+		npmInstall.on('close', (code) => {
+			if (code === 0) {
+				resolve(code);
+			} else {
+				resolve(code);
+				// reject(new Error(`npm process exited with code ${code}`));
+			}
+		});
 	});
-  }
+}
 
 // RUNTIME!
 console.clear();
@@ -328,6 +340,144 @@ const runSetSalts = async (shouldRun) => {
 	}
 }
 
+// TODO: Add the info per command to inform what was sdone
+const informUser = async (info = '') => {
+	const { key: anyKey } = await inquirer.prompt({
+		name: 'key',
+		type: 'press-to-continue',
+		anyKey: true,
+		pressToContinueMessage: `\n${chalk.bgWhiteBright('----------------')}\n--- Operation finished ---\nPress a key to continue...\n${chalk.bgWhiteBright('----------------')}`,
+	});
+
+	//back to menu
+	menu();
+}
+
+//TODO: Check if WP cli comamnd is available
+//TODO: Check and inform user if the url seems correct or not.
+//TODO: Format output
+//TODO: Handle errors and messages and stuff
+async function dbSiteNameFix(shouldRun) {
+	if (!shouldRun) {
+		return;
+	}
+
+	const oldDomain = await inquirer.prompt({
+		name: 'value',
+		default: "https://old-domain.com",
+		type: 'input',
+		message: `Enter String to replace (e.g old domain):`,
+	});
+
+	const newDomain = await inquirer.prompt({
+		name: 'value',
+		default: `http://${siteSettings?.domain}`,
+		type: 'input',
+		message: `Enter String to replace (e.g new domain):`,
+	});
+
+	const isNetwork = await inquirer.prompt({
+		name: 'value',
+		type: 'list',
+		message: 'Is this network installation?\n',
+		choices: [
+			'No',
+			'Yes'
+		]
+	})
+
+	const isDryRun = await inquirer.prompt({
+		name: 'value',
+		type: 'list',
+		message: 'Dry run?\n',
+		choices: [
+			'No',
+			'Yes'
+		]
+	})
+
+	return new Promise((resolve, reject) => {
+		//wp search-replace "https://old-domain.com" "http://new-domain.com" --recurse-objects --skip-columns=guid --network --dry
+		
+		const commanArgs = [
+			'search-replace',
+			oldDomain.value,
+			newDomain.value,
+			'--recurse-objects',
+			'--skip-columns=guid',
+		];
+
+		if (isNetwork.value === 'Yes') commanArgs.push('--network');
+		if (isDryRun.value === 'Yes') commanArgs.push('--dry-run');
+
+		const runWpCli = spawn('wp', commanArgs);
+		// runWpCli.stdout.on('data', (data) => {
+		// 	console.log(`${data}`);
+		// });
+
+		let output = '';
+		let error = '';
+
+		runWpCli.stdout.on('data', (data) => {
+			output += data.toString();
+		});
+
+		runWpCli.stderr.on('data', (data) => {
+			error += data.toString();
+		});
+
+		runWpCli.on('error', (err) => {
+			console.error(err);
+		});
+
+		runWpCli.on('close', (code) => {
+			if (code === 0) {
+				const rows = output.trim().split('\n');
+				const headers = ['Table', 'Column', 'Replacements', 'Type'];
+				let formattedOutput = [];
+
+				if (rows.length > 1) {
+					formattedOutput = rows.map((row) => {
+						const values = row.split('\t');
+						return {
+						Table: values[0],
+						Column: values[1],
+						Replacements: values[2],
+						Type: values[3]
+						};
+					});
+					formattedOutput.shift();
+					delete formattedOutput[0].Replacements;
+					delete formattedOutput[0].Type;
+				}
+
+				if (formattedOutput.length > 0) {
+					console.table(formattedOutput, headers);
+				}
+
+				if (rows.length > 0) {
+					console.log(rows[rows.length - 1]);
+				}
+			} else {
+				console.error(error);
+			}
+		});
+
+		runWpCli.stderr.on('data', (data) => {
+			console.error(`${data}`);
+		});
+
+		runWpCli.on('close', (code) => {
+			if (code === 0) {
+				resolve(code);
+			} else {
+				resolve(code);
+				// reject(new Error(`npm process exited with code ${code}`));
+			}
+		});
+	});
+}
+
 // const shouldSetSalts = await askIfSetSalts();
 // await runSetSalts(shouldSetSalts)
 
@@ -346,12 +496,12 @@ const menu = async () => {
 			"Run npm install",
 			new inquirer.Separator(chalk.red.bold("---- LOCAL ----")),
 			"Fix WP CLI",
-			new inquirer.Separator(chalk.red.bold("---- ENV ----")),
+			new inquirer.Separator(chalk.red.bold("---- Utils ----")),
 			"Set DB",
 			"Set WP Salts",
+			"DB Str Replace",
 			chalk.red.bold("Quit"),
 			new inquirer.Separator(chalk.red.bold("---- TO BE DONE ----")),
-			"DB Str Replace",
 			"Activate plugins && Theme setup",
 			"Fix Local multisite config",
 			"Run npm build",
@@ -364,27 +514,26 @@ const menu = async () => {
 		switch (answers.menuOption) {
 
 			case "DB Str Replace":
-				console.log(chalk.red('Simpe WP CLI with inputs for strings to replace'), '\n')
-				console.log(chalk.bgRed('YET TO BE DONE ...'))
-				menu();
+				await dbSiteNameFix(true);
+				await informUser();
 				break;
 
 			case "Activate plugins && Theme setup":
 				console.log(chalk.red('Should run WP CLI commands from actiave plugins and setup main site.'), '\n')
 				console.log(chalk.bgRed('YET TO BE DONE ...'))
-				menu();
+				await informUser();
 				break;
 
 			case "Fix Local multisite config":
 				console.log(chalk.red('Basically fix the local multistie config.'), '\n')
 				console.log(chalk.bgRed('YET TO BE DONE ...'))
-				menu();
+				await informUser();
 				break;
 
 			case "Run project setup wizard":
 				console.log(chalk.red('This command will guide user and ask if run command after command required to install the project.'), '\n')
 				console.log(chalk.bgRed('YET TO BE DONE ...'))
-				menu();
+				await informUser();
 				break;
 
 			case "Run Composer install":
@@ -401,35 +550,35 @@ const menu = async () => {
 					}
 				});
 
-				menu();
+				await informUser();
 				break;
 	
 			case "Run npm install":
 				await runNvmUseAndNpmInstall(true)
-				menu();
+				await informUser();
 				break;
 
 			case "Run npm build":
 				console.log(chalk.bgRed('YET TO BE DONE ...'))
-				menu();
+				await informUser();
 				break;
 
 			case "Fix WP CLI":
 				console.log(`\n${chalk.yellow("You selected Fix WP CLI")}`);
 				await fixWpCli(true)
-				menu();
+				await informUser();
 				break;
 
 			case "Set DB":
 				console.log(chalk.blue("Set DB in the .env"));
 				await setUpEnvDB(true)
-				menu();
+				await informUser();
 				break;
 
 			case "Set WP Salts":
 				console.log(chalk.blue("Setting up SALTS in the .env file"));
 				await runSetSalts(true)
-				menu();
+				await informUser();
 				break;
 
 			case chalk.red.bold("Quit"):
@@ -442,7 +591,7 @@ const menu = async () => {
 
 			default:
 				console.log("Invalid option");
-				menu();
+				await informUser();
 			}
 	});
 };
